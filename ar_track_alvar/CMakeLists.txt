@@ -65,7 +65,7 @@ catkin_package(
         dynamic_reconfigure
 )
 
-include_directories(include 
+include_directories(include
                     ${catkin_INCLUDE_DIRS}
                     ${OpenCV_INCLUDE_DIRS}
                     ${TinyXML_INCLUDE_DIRS}
@@ -75,6 +75,7 @@ include_directories(include
 set(GENCPP_DEPS ar_track_alvar_msgs_gencpp std_msgs_gencpp sensor_msgs_gencpp geometry_msgs_gencpp visualization_msgs_gencpp)
 
 add_library(ar_track_alvar
+    src/SolvePnP.cpp
     src/Camera.cpp
     src/CaptureDevice.cpp
     src/Pose.cpp
@@ -161,12 +162,12 @@ install(DIRECTORY launch bundles
 
 if (CATKIN_ENABLE_TESTING)
   find_package(catkin REQUIRED COMPONENTS roslaunch rostest)
-  
+
   file(GLOB LAUNCH_FILES launch/*.launch test/*.test)
   foreach(LAUNCH_FILE ${LAUNCH_FILES})
     roslaunch_add_file_check(${LAUNCH_FILE} USE_TEST_DEPENDENCIES)
   endforeach()
-  
+
   catkin_download_test_data(
     ${PROJECT_NAME}_4markers_tork.bag
     http://download.ros.org/data/ar_track_alvar/ar_track_alvar_4markers_tork_2017-02-08-11-21-14.bag

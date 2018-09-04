@@ -41,6 +41,7 @@
 #include <cv.h>
 #include <cmath> //for abs
 #include <map>
+#include <opencv2/calib3d.hpp>         //For fisheye
 #include <opencv2/calib3d/calib3d_c.h> //Compatibility with OpenCV 3.x
 
 namespace alvar {
@@ -77,7 +78,7 @@ double ALVAR_EXPORT Deg2Rad(const C& v)
 /**
  * \brief Simple \e Point class meant to be inherited from OpenCV point-classes. For example: Point<CvPoint2D64f> p
  */
-template<class C, class D = int> 
+template<class C, class D = int>
 struct ALVAR_EXPORT Point : public C
 {
 	/**
@@ -97,7 +98,7 @@ struct ALVAR_EXPORT Point : public C
 	}
 };
 
-/** 
+/**
   *  \brief The default integer point type.
 */
 typedef ALVAR_EXPORT Point<CvPoint> PointInt;
@@ -107,7 +108,7 @@ typedef ALVAR_EXPORT Point<CvPoint> PointInt;
 */
 typedef ALVAR_EXPORT Point<CvPoint2D64f> PointDouble;
 
-/** \brief Returns the squared distance of two points. 
+/** \brief Returns the squared distance of two points.
   * \param p1	First point.
   * \param p2	Second point.
   * \return Squared distance.
@@ -122,27 +123,27 @@ double PointSquaredDistance(PointType p1, PointType p2) {
 //ttesis start
 
 
-/** 
+/**
   * \brief  Computes dot product AB.BC
   * \param  A,B and C	points defining lines (line segments) AB and BC
  */
 int ALVAR_EXPORT dot(CvPoint *A, CvPoint *B, CvPoint *C);
 
-/** 
+/**
   * \brief  Computes the cross product AB x AC
   * \param  A,B and C points defining lines (line segments) AB and AC
-  * \param 
+  * \param
  */
 int ALVAR_EXPORT cross(CvPoint *A,CvPoint *B, CvPoint *C);
 
 
-/** 
+/**
   * \brief  Compute the distance from A to B
   * \param  A and B		points
  */
 double ALVAR_EXPORT distance(CvPoint *A,CvPoint *B);
 
-/** 
+/**
   * \brief  Computes the distance from point C to line (segment) AB.
   * \param  isSegment	If isSegment is true, AB is a segment, not a line.
   * \param  C	point
@@ -151,7 +152,7 @@ double ALVAR_EXPORT distance(CvPoint *A,CvPoint *B);
 double ALVAR_EXPORT linePointDist(CvPoint *A,CvPoint *B,CvPoint *C, bool isSegment);
 
 
-/** 
+/**
   * \brief  Computes the angle between lines AB and CD
   * \param  isDirectionDependent	If isDirectionDependent = 1, angle depends on the order of the points. Otherwise returns smaller angle.
   * \param  A start point of first line
@@ -162,7 +163,7 @@ double ALVAR_EXPORT linePointDist(CvPoint *A,CvPoint *B,CvPoint *C, bool isSegme
 double ALVAR_EXPORT angle(CvPoint *A,CvPoint *B, CvPoint *C,CvPoint *D, int isDirectionDependent);
 
 
-/** 
+/**
   * \brief  Calculates minimum distance from Point C to Polygon whose points are in list PointList
   * \brief  Returns distance
   * \param  index	index of point A in pointlist, where A is the starting point of the closest polygon segment
@@ -173,8 +174,8 @@ double ALVAR_EXPORT polyLinePointDist(CvPoint *PointList, int nPnts,CvPoint *C, 
 //ttesis end
 
 
-/** 
-  * \brief Uses OpenCV routine to fit ellipse to a vector of points. 
+/**
+  * \brief Uses OpenCV routine to fit ellipse to a vector of points.
   * \param points		Vector of points on the ellipse edge.
   * \param ellipse_box	OpenCV struct for the fitted ellipse.
  */
@@ -182,7 +183,7 @@ void ALVAR_EXPORT FitCVEllipse(const std::vector<PointDouble> &points, CvBox2D& 
 
 int ALVAR_EXPORT exp_filt2(std::vector<double> &v,std:: vector<double> &ret, bool clamp);
 
-/** 
+/**
   * \brief Calculates the difference between the consecutive vector elements.
   * \param v	Source elements.
   * \param ret	The difference vector. This is cleared and then resized.
@@ -190,7 +191,7 @@ int ALVAR_EXPORT exp_filt2(std::vector<double> &v,std:: vector<double> &ret, boo
   */
 template<class C> inline
 int ALVAR_EXPORT diff(const std::vector<C> &v, std::vector<C> &ret)
-{	
+{
 	ret.clear();
 	if (v.size() == 1) {
 		ret.push_back(0);
@@ -204,22 +205,22 @@ int ALVAR_EXPORT diff(const std::vector<C> &v, std::vector<C> &ret)
 	return int(ret.size());
 }
 
-/** 
+/**
   * \brief Finds zero crossings of given vector elements (sequence).
   * \param v		Sequence of numbers from where the zero crossings are found.
   * \param corners	Resulting index list of zero crossings.
-  * \param offs		
+  * \param offs
   * \return			Number of zero crossings found.
   */
 int ALVAR_EXPORT find_zero_crossings(const std::vector<double>& v, std::vector<int> &corners, int offs = 20);
 
-/** 
+/**
   * \brief Output OpenCV matrix for debug purposes.
   */
 void ALVAR_EXPORT out_matrix(const CvMat *m, const char *name);
 
-/** 
-  * \brief Limits a number to between two values. 
+/**
+  * \brief Limits a number to between two values.
   * \param val		Input value.
   * \param min_val	Minimum value for the result.
   * \param max_val	Maximum value for the result.
@@ -227,7 +228,7 @@ void ALVAR_EXPORT out_matrix(const CvMat *m, const char *name);
 */
 double ALVAR_EXPORT Limit(double val, double min_val, double max_val);
 
-/** 
+/**
  * \brief Class for N-dimensional index to be used e.g. with STL maps
  *
  * The idea is that if you want to sort N-dimensional pointers (e.g.
@@ -247,7 +248,7 @@ struct ALVAR_EXPORT Index {
 	bool operator<(const Index &index) const;
 };
 
-/** 
+/**
  * \brief Class for N-dimensional Histograms
  */
 class ALVAR_EXPORT Histogram {
@@ -257,20 +258,20 @@ protected:
 	int DimIndex(int dim, double val);
 	double DimVal(int dim, int index);
 public:
-	/** \brief Add dimension with a binsize 
+	/** \brief Add dimension with a binsize
 	 */
 	void AddDimension(int binsize);
 	/** \brief Clear the histogram */
 	void Clear();
 	/** \brief Increase the histogram for given dimensions */
 	void Inc(double dim0, double dim1=0, double dim2=0);
-	/** \brief Get the maximum from the histogram 
+	/** \brief Get the maximum from the histogram
 	 *  This returns the value in the middle of the 'bin' instead of bin-number
 	 */
 	int GetMax(double *dim0, double *dim1=0, double *dim2=0);
 };
 
-/** 
+/**
  * \brief N-dimensional Histograms calculating also the subpixel average for max bin
  */
 class ALVAR_EXPORT HistogramSubpixel : public Histogram {
@@ -283,7 +284,7 @@ public:
 	void Clear();
 	/** \brief Increase the histogram for given dimensions */
 	void Inc(double dim0, double dim1=0, double dim2=0);
-	/** \brief Get the maximum from the histogram 
+	/** \brief Get the maximum from the histogram
 	 *  This finds the maximum bin(s) and averages the original
 	 *  values contained there to achieve subpixel accuracy.
 	 */
@@ -323,7 +324,7 @@ public:
  *	return true;
  * }
  * \endcode
- * In your classes \e Serialize -method you can use the overloaded 
+ * In your classes \e Serialize -method you can use the overloaded
  * \e Serialize method of the \e Serialization class to serialize
  * data or data arrays. In addition you can use \e SerializeClass
  * to serialize inner serializable classes.
@@ -346,7 +347,7 @@ public:
  * seri>>cam;
  * \endcode
  *
- * See the constructor \e Serialization::Serialization documentation for 
+ * See the constructor \e Serialization::Serialization documentation for
  * further use examples.
  */
 class ALVAR_EXPORT Serialization {
@@ -361,7 +362,7 @@ protected:
 	bool Descend(const char *id);
 	bool Ascend();
 public:
-	/** \brief Constructor for serializing to/from specified filename 
+	/** \brief Constructor for serializing to/from specified filename
 	 *
 	 * \code
 	 * Serialization sero("test1.xml");
@@ -383,13 +384,13 @@ public:
 	 * Serialization seri(ifs);
 	 * sero>>cam;
 	 * \endcode
-	 * 
-	 * There are differences with these approaches. When using the constructor 
+	 *
+	 * There are differences with these approaches. When using the constructor
 	 * with 'filename', we use the tinyxml Save and Load methods, while with
 	 * iostream we use tinyxml operators for << and >> . The prior approach
-	 * uses properly indented xml-files with XML declaration <?...?>. In the 
+	 * uses properly indented xml-files with XML declaration <?...?>. In the
 	 * latter approach the indentations and the XML declaration are left out.
-	 * The XML declaration <?...?> is left out because for some reason tinyxml 
+	 * The XML declaration <?...?> is left out because for some reason tinyxml
 	 * doesn't parse it correctly when using operator>> .
 	 */
 	Serialization(std::string _filename);
@@ -419,7 +420,7 @@ public:
 		}
 		return *this;
 	}
-	/** \brief Method for serializing a serializable class. Used by operators << and >> . 
+	/** \brief Method for serializing a serializable class. Used by operators << and >> .
 	 *
 	 * Note, in the future this should be usable also from your serializable class
 	 * for adding nested serializable classes.

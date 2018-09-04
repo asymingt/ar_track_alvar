@@ -23,6 +23,7 @@
 
 #include "ar_track_alvar/Alvar.h"
 #include "ar_track_alvar/Camera.h"
+#include "ar_track_alvar/SolvePnP.h"
 #include "ar_track_alvar/FileFormatUtils.h"
 #include <memory>
 
@@ -43,7 +44,7 @@ bool ProjPoints::AddPointsUsingChessboard(IplImage *image, double etalon_square_
 	if (image->width == 0) return false;
 	IplImage *gray = cvCreateImage(cvSize(image->width, image->height), IPL_DEPTH_8U, 1);
 	CvPoint2D32f *corners = new CvPoint2D32f[etalon_rows*etalon_columns];
-	if (image->nChannels == 1) 
+	if (image->nChannels == 1)
 		cvCopy(image, gray);
 	else
 		cvCvtColor(image, gray, CV_RGB2GRAY);
@@ -120,7 +121,7 @@ Camera::Camera() {
 }
 
 
-Camera::Camera(ros::NodeHandle & n, std::string cam_info_topic):n_(n) 
+Camera::Camera(ros::NodeHandle & n, std::string cam_info_topic):n_(n)
 {
 	calib_K = cvMat(3, 3, CV_64F, calib_K_data);
 	calib_D = cvMat(4, 1, CV_64F, calib_D_data);
@@ -178,16 +179,16 @@ bool Camera::LoadCalibXML(const char *calibfile) {
 	if (!document.LoadFile(calibfile)) return false;
 	TiXmlElement *xml_root = document.RootElement();
 
-	return 
+	return
 		xml_root->QueryIntAttribute("width", &calib_x_res) == TIXML_SUCCESS &&
 		xml_root->QueryIntAttribute("height", &calib_y_res) == TIXML_SUCCESS &&
-		FileFormatUtils::parseXMLMatrix(xml_root->FirstChildElement("intrinsic_matrix"), &calib_K) && 
+		FileFormatUtils::parseXMLMatrix(xml_root->FirstChildElement("intrinsic_matrix"), &calib_K) &&
 		FileFormatUtils::parseXMLMatrix(xml_root->FirstChildElement("distortion"), &calib_D);
 }
 
 bool Camera::LoadCalibOpenCV(const char *calibfile) {
 	cvSetErrMode(CV_ErrModeSilent);
-	CvFileStorage* fs = cvOpenFileStorage(calibfile, 0, CV_STORAGE_READ); 
+	CvFileStorage* fs = cvOpenFileStorage(calibfile, 0, CV_STORAGE_READ);
 	cvSetErrMode(CV_ErrModeLeaf);
 	if(fs){
 		CvFileNode* root_node = cvGetRootFileNode(fs);
@@ -217,7 +218,7 @@ bool Camera::LoadCalibOpenCV(const char *calibfile) {
 		CvFileNode* height_node = cvGetFileNodeByName(fs, root_node, "height");
 		calib_x_res = width_node->data.i;
 		calib_y_res = height_node->data.i;
-		cvReleaseFileStorage(&fs); 
+		cvReleaseFileStorage(&fs);
 		return true;
 	}
 	// reset error status
@@ -244,17 +245,8 @@ void Camera::SetCameraInfo(const sensor_msgs::CameraInfo &camInfo)
     cvmSet(&calib_K, 2, 1, cam_info_.K[7]);
     cvmSet(&calib_K, 2, 2, cam_info_.K[8]);
 
-    if (cam_info_.D.size() >= 4) {
-        cvmSet(&calib_D, 0, 0, cam_info_.D[0]);
-        cvmSet(&calib_D, 1, 0, cam_info_.D[1]);
-        cvmSet(&calib_D, 2, 0, cam_info_.D[2]);
-        cvmSet(&calib_D, 3, 0, cam_info_.D[3]);
-    } else {
-        cvmSet(&calib_D, 0, 0, 0);
-        cvmSet(&calib_D, 1, 0, 0);
-        cvmSet(&calib_D, 2, 0, 0);
-        cvmSet(&calib_D, 3, 0, 0);
-    }
+		for (size_t i = 0; i < calib_D.height; i++)
+			cvmSet(&calib_D, i, 0, (i < cam_info_.D.size() ? cam_info_.D[i] : 0.0));
 }
 
 void Camera::camInfoCallback (const sensor_msgs::CameraInfoConstPtr & cam_info)
@@ -289,7 +281,7 @@ bool Camera::SetCalib(const char *calibfile, int _x_res, int _y_res, FILE_FORMAT
 	if (success) {
 		// Scale matrix in case of different resolution calibration.
 		// The OpenCV documentation says:
-		// - If an image from camera is up-sampled/down-sampled by some factor, all intrinsic camera parameters 
+		// - If an image from camera is up-sampled/down-sampled by some factor, all intrinsic camera parameters
 		//   (fx, fy, cx and cy) should be scaled (multiplied/divided, respectively) by the same factor.
 		// - The distortion coefficients remain the same regardless of the captured image resolution.
 		if ((calib_x_res != x_res) || (calib_y_res != y_res)) {
@@ -316,16 +308,16 @@ bool Camera::SaveCalibXML(const char *calibfile) {
 
 bool Camera::SaveCalibOpenCV(const char *calibfile) {
 	cvSetErrMode(CV_ErrModeSilent);
-	CvFileStorage* fs = cvOpenFileStorage(calibfile, 0, CV_STORAGE_WRITE); 
+	CvFileStorage* fs = cvOpenFileStorage(calibfile, 0, CV_STORAGE_WRITE);
 	cvSetErrMode(CV_ErrModeLeaf);
 	if(fs){
-		cvWrite(fs, "intrinsic_matrix", &calib_K, cvAttrList(0,0)); 
-		cvWrite(fs, "distortion", &calib_D, cvAttrList(0,0)); 
-		//cvWriteReal(fs, "fov_x", data.fov_x); 
-		//cvWriteReal(fs, "fov_y", data.fov_y); 
+		cvWrite(fs, "intrinsic_matrix", &calib_K, cvAttrList(0,0));
+		cvWrite(fs, "distortion", &calib_D, cvAttrList(0,0));
+		//cvWriteReal(fs, "fov_x", data.fov_x);
+		//cvWriteReal(fs, "fov_y", data.fov_y);
 		cvWriteInt(fs, "width", calib_x_res);
 		cvWriteInt(fs, "height", calib_y_res);
-		cvReleaseFileStorage(&fs); 
+		cvReleaseFileStorage(&fs);
 		return true;
 	}
 	// reset error status
@@ -360,13 +352,20 @@ void Camera::Calibrate(ProjPoints &pp)
 		image_points->data.fl[i*2+0]  = (float)pp.image_points[i].x;
 		image_points->data.fl[i*2+1]  = (float)pp.image_points[i].y;
 	}
-	cvCalibrateCamera2(object_points, image_points, &point_counts, 
-		cvSize(pp.width, pp.height), 
-		&calib_K, &calib_D, 0, 0, CV_CALIB_USE_INTRINSIC_GUESS);
-
+	if (cam_info_.distortion_model == "fisheye") {
+		cv::Mat O = cv::cvarrToMat(object_points);
+		cv::Mat I = cv::cvarrToMat(image_points);
+		cv::Mat K = cv::cvarrToMat(&calib_K);
+		cv::Mat D = cv::cvarrToMat(&calib_D);
+		cv::fisheye::calibrate(O, I, cv::Size(pp.width, pp.height),
+			K, D, cv::Mat(), cv::Mat(), cv::fisheye::CALIB_USE_INTRINSIC_GUESS);
+	} else {
+		cvCalibrateCamera2(object_points, image_points, &point_counts,
+			cvSize(pp.width, pp.height),
+			&calib_K, &calib_D, 0, 0, CV_CALIB_USE_INTRINSIC_GUESS);
+	}
 	calib_x_res = pp.width;
 	calib_y_res = pp.height;
-	
 	cvReleaseMat(&object_points);
 	cvReleaseMat(&image_points);
 }
@@ -376,7 +375,7 @@ void Camera::SetRes(int _x_res, int _y_res) {
 	y_res = _y_res;
 	// Scale matrix in case of different resolution calibration.
 	// The OpenCV documentation says:
-	// - If an image from camera is up-sampled/down-sampled by some factor, all intrinsic camera parameters 
+	// - If an image from camera is up-sampled/down-sampled by some factor, all intrinsic camera parameters
 	//   (fx, fy, cx and cy) should be scaled (multiplied/divided, respectively) by the same factor.
 	// - The distortion coefficients remain the same regardless of the captured image resolution.
 	if ((calib_x_res != x_res) || (calib_y_res != y_res)) {
@@ -390,7 +389,7 @@ void Camera::SetRes(int _x_res, int _y_res) {
 // TODO: Better approach for this...
 // Note, the proj_matrix[8] is now negated. This is due to the fact
 // that with OpenCV and OpenGL projection matrices both y and z
-// should be mirrored. All other components are 
+// should be mirrored. All other components are
 void Camera::GetOpenglProjectionMatrix(double proj_matrix[16], const int width, const int height, const float far_clip /*= 1000.0f*/, const float near_clip /*= 0.1f*/) {
 	proj_matrix[0]	= 2.0f * calib_K_data[0][0] / float(width);
 	proj_matrix[1]	= 0;
@@ -549,7 +548,7 @@ void Camera::Undistort(CvPoint2D32f& point)
 	}
 */
 
-void Camera::Distort(vector<PointDouble>& points) 
+void Camera::Distort(vector<PointDouble>& points)
 {
 /*
 	double u0 = cvmGet(&calib_K, 0, 2), v0 = cvmGet(&calib_K, 1, 2); // cx, cy
@@ -580,7 +579,7 @@ void Camera::Distort(vector<PointDouble>& points)
 */
 }
 
-void Camera::Distort(PointDouble & point) 
+void Camera::Distort(PointDouble & point)
 {
 /*
 	double u0 = cvmGet(&calib_K, 0, 2), v0 = cvmGet(&calib_K, 1, 2); // cx, cy
@@ -608,7 +607,7 @@ void Camera::Distort(PointDouble & point)
 */
 }
 
-void Camera::Distort(CvPoint2D32f & point) 
+void Camera::Distort(CvPoint2D32f & point)
 {
 /*
 	double u0 = cvmGet(&calib_K, 0, 2), v0 = cvmGet(&calib_K, 1, 2); // cx, cy
@@ -689,8 +688,18 @@ void Camera::CalcExteriorOrientation(vector<CvPoint3D64f>& pw, vector<PointDoubl
 
 	cvZero(tra);
 	//cvmodFindExtrinsicCameraParams2(&world_mat, &image_mat, &calib_K, &calib_D, rodriques, tra, error);
-	cvFindExtrinsicCameraParams2(&world_mat, &image_mat, &calib_K, &calib_D, rodriques, tra);
-	
+	if (cam_info_.distortion_model == "fisheye") {
+		cv::Mat O = cv::cvarrToMat(&world_mat);
+		cv::Mat I = cv::cvarrToMat(&image_mat);
+		cv::Mat K = cv::cvarrToMat(&calib_K);
+		cv::Mat D = cv::cvarrToMat(&calib_D);
+		cv::Mat rvec = cv::cvarrToMat(&rodriques);
+		cv::Mat tvec = cv::cvarrToMat(&tra);
+		cv::fisheye::solvePnP(O, I, K, D, rvec, tvec, false, cv::SOLVEPNP_UPNP);
+	} else {
+		cvFindExtrinsicCameraParams2(&world_mat, &image_mat, &calib_K, &calib_D, rodriques, tra);
+	}
+
 	delete[] world_pts;
 	delete[] image_pts;
 }
@@ -723,8 +732,19 @@ void Camera::CalcExteriorOrientation(vector<PointDouble>& pw, vector<PointDouble
 	pose->SetTranslation(&ext_translate_mat);
 }
 
-bool Camera::CalcExteriorOrientation(const CvMat* object_points, CvMat* image_points, CvMat *rodriques, CvMat *tra) {
-	cvFindExtrinsicCameraParams2(object_points, image_points, &calib_K, &calib_D, rodriques, tra);
+bool Camera::CalcExteriorOrientation(const CvMat* object_points, CvMat* image_points,
+	CvMat *rodriques, CvMat *tra) {
+	if (cam_info_.distortion_model == "fisheye") {
+		cv::Mat O = cv::cvarrToMat(&object_points);
+		cv::Mat I = cv::cvarrToMat(&image_points);
+		cv::Mat K = cv::cvarrToMat(&calib_K);
+		cv::Mat D = cv::cvarrToMat(&calib_D);
+		cv::Mat rvec = cv::cvarrToMat(&rodriques);
+		cv::Mat tvec = cv::cvarrToMat(&tra);
+		cv::fisheye::solvePnP(O, I, K, D, rvec, tvec, false, cv::SOLVEPNP_UPNP);
+	} else {
+		cvFindExtrinsicCameraParams2(object_points, image_points, &calib_K, &calib_D, rodriques, tra);
+	}
 	return true;
 }
 
@@ -753,7 +773,18 @@ void Camera::ProjectPoints(vector<CvPoint3D64f>& pw, Pose *pose, vector<CvPoint2
 		object_points->data.fl[i*3+1] = (float)pw[i].y;
 		object_points->data.fl[i*3+2] = (float)pw[i].z;
 	}
-	cvProjectPoints2(object_points, &ext_rodriques_mat, &ext_translate_mat, &calib_K, &calib_D, image_points);  
+	if (cam_info_.distortion_model == "fisheye") {
+		cv::Mat O = cv::cvarrToMat(object_points);
+		cv::Mat I = cv::cvarrToMat(image_points);
+		cv::Mat K = cv::cvarrToMat(&calib_K);
+		cv::Mat D = cv::cvarrToMat(&calib_D);
+		cv::Mat rvec = cv::cvarrToMat(&ext_rodriques_mat);
+		cv::Mat tvec = cv::cvarrToMat(&ext_translate_mat);
+		cv::fisheye::projectPoints(O, I, rvec, tvec, K, D);
+	} else {
+		cvProjectPoints2(object_points, &ext_rodriques_mat, &ext_translate_mat,
+			&calib_K, &calib_D, image_points);
+	}
 	for (size_t i=0; i<pw.size(); i++) {
 		pi[i].x = image_points->data.fl[i*2+0];
 		pi[i].y = image_points->data.fl[i*2+1];
@@ -765,8 +796,18 @@ void Camera::ProjectPoints(vector<CvPoint3D64f>& pw, Pose *pose, vector<CvPoint2
 void Camera::ProjectPoints(const CvMat* object_points, const CvMat* rotation_vector,
 				   const CvMat* translation_vector, CvMat* image_points) const
 {
-	// Project points
-	cvProjectPoints2(object_points, rotation_vector, translation_vector, &calib_K, &calib_D, image_points);  
+	if (cam_info_.distortion_model == "fisheye") {
+		cv::Mat O = cv::cvarrToMat(object_points);
+		cv::Mat I = cv::cvarrToMat(image_points);
+		cv::Mat K = cv::cvarrToMat(&calib_K);
+		cv::Mat D = cv::cvarrToMat(&calib_D);
+		cv::Mat rvec = cv::cvarrToMat(rotation_vector);
+		cv::Mat tvec = cv::cvarrToMat(translation_vector);
+		cv::fisheye::projectPoints(O, I, rvec, tvec, K, D);
+	} else {
+		cvProjectPoints2(object_points, rotation_vector, translation_vector,
+			&calib_K, &calib_D, image_points);
+	}
 }
 
 void Camera::ProjectPoints(const CvMat* object_points, const Pose* pose, CvMat* image_points) const
@@ -777,7 +818,17 @@ void Camera::ProjectPoints(const CvMat* object_points, const Pose* pose, CvMat* 
 	CvMat ext_translate_mat = cvMat(3, 1, CV_64F, ext_translate);
 	pose->GetRodriques(&ext_rodriques_mat);
 	pose->GetTranslation(&ext_translate_mat);
-	cvProjectPoints2(object_points, &ext_rodriques_mat, &ext_translate_mat, &calib_K, &calib_D, image_points);  
+	if (cam_info_.distortion_model == "fisheye") {
+		cv::Mat O = cv::cvarrToMat(object_points);
+		cv::Mat I = cv::cvarrToMat(image_points);
+		cv::Mat K = cv::cvarrToMat(&calib_K);
+		cv::Mat D = cv::cvarrToMat(&calib_D);
+		cv::Mat rvec = cv::cvarrToMat(&ext_rodriques_mat);
+		cv::Mat tvec = cv::cvarrToMat(&ext_translate_mat);
+		cv::fisheye::projectPoints(O, I, rvec, tvec, K, D);
+	} else {
+		cvProjectPoints2(object_points, &ext_rodriques_mat, &ext_translate_mat, &calib_K, &calib_D, image_points);
+	}
 }
 
 void Camera::ProjectPoints(const CvMat* object_points, double gl[16], CvMat* image_points) const
@@ -789,7 +840,7 @@ void Camera::ProjectPoints(const CvMat* object_points, double gl[16], CvMat* ima
 		gl[3], gl[7], gl[11], gl[15],
 	};
 	CvMat glm_mat = cvMat(4, 4, CV_64F, glm);
-	
+
 	// For some reason we need to mirror both y and z ???
 	double cv_mul_data[4][4];
 	CvMat cv_mul = cvMat(4, 4, CV_64F, cv_mul_data);
@@ -797,11 +848,11 @@ void Camera::ProjectPoints(const CvMat* object_points, double gl[16], CvMat* ima
 	cvmSet(&cv_mul, 1, 1, -1);
 	cvmSet(&cv_mul, 2, 2, -1);
 	cvMatMul(&cv_mul, &glm_mat, &glm_mat);
-	
+
 	// Rotation
 	Rotation r;
 	r.SetMatrix(&glm_mat);
-	double rod[3]; 
+	double rod[3];
 	CvMat rod_mat=cvMat(3, 1, CV_64F, rod);
 	r.GetRodriques(&rod_mat);
 	// Translation
@@ -850,7 +901,7 @@ void Homography::Find(const vector<PointDouble  >& pw, const vector<PointDouble 
 		dstp[i].x = pi[i].x;
 		dstp[i].y = pi[i].y;
 	}
-	
+
 	CvMat src_pts, dst_pts;
 	cvInitMatHeader(&dst_pts, 1, size, CV_64FC2, dstp);
 	cvInitMatHeader(&src_pts, 1, size, CV_64FC2, srcp);
@@ -865,7 +916,7 @@ void Homography::Find(const vector<PointDouble  >& pw, const vector<PointDouble 
 	delete[] dstp;
 }
 
-void Homography::ProjectPoints(const vector<PointDouble>& from, vector<PointDouble>& to) 
+void Homography::ProjectPoints(const vector<PointDouble>& from, vector<PointDouble>& to)
 {
 	int size = (int)from.size();
 
@@ -882,19 +933,19 @@ void Homography::ProjectPoints(const vector<PointDouble>& from, vector<PointDoub
 	CvMat src_pts, dst_pts;
 	cvInitMatHeader(&src_pts, 1, size, CV_64FC3, srcp);
 	cvInitMatHeader(&dst_pts, 1, size, CV_64FC3, dstp);
-	
+
 	cvTransform(&src_pts, &dst_pts, &H);
 
 	to.clear();
 	for(int i = 0; i < size; ++i)
-	{	
+	{
 		PointDouble pt;
 		pt.x = dstp[i].x / dstp[i].z;
 		pt.y = dstp[i].y / dstp[i].z;
-		
+
 		to.push_back(pt);
 	}
-	
+
 	delete[] srcp;
 	delete[] dstp;
 }
